@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Court Clock">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#edf2f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c1824" media="(prefers-color-scheme: dark)">
+<title>7:00 Court Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-column scoreboard. Big Hong Kong time, countdown to 07:00, then the step for this moment. */
+:root {
+  --bg: #edf2f6;
+  --surface: #ffffff;
+  --fg: #122435;
+  --muted: #586a7b;
+  --line: #cbd7e1;
+  --court: #24598a;
+  --on-court: #ffffff;
+  --ball: #d3e34c;
+  --on-ball: #1b2905;
+  --ok: #1d7549;
+  --warn: #9a5400;
+  --display: "Barlow Condensed", "Arial Narrow", "PingFang HK", system-ui, sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "PingFang HK", "Noto Sans HK", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1824; --surface: #132433; --fg: #e4edf4; --muted: #94a7b8; --line: #263b4e;
+    --court: #7db1e2; --on-court: #0c1824; --ball: #d3e34c; --on-ball: #1b2905;
+    --ok: #62c893; --warn: #eba24f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1824; --surface: #132433; --fg: #e4edf4; --muted: #94a7b8; --line: #263b4e;
+  --court: #7db1e2; --on-court: #0c1824; --ball: #d3e34c; --on-ball: #1b2905;
+  --ok: #62c893; --warn: #eba24f; color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.45; }
+.wrap {
+  max-width: 560px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 32px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--surface); font-variant-numeric: tabular-nums; }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.chip[data-state="ok"] { color: var(--ok); }
+.chip[data-state="warn"] { color: var(--warn); }
+.chip[data-state="syncing"]::before { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+.clock { display: flex; flex-direction: column; gap: 2px; }
+.time { font-family: var(--display); font-weight: 600; font-size: clamp(64px, 21vw, 150px); line-height: 0.95; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tenth { font-size: 0.42em; color: var(--muted); margin-left: 0.05em; }
+.drift { font-size: 14px; color: var(--muted); }
+
+.count { border-radius: 14px; border: 1px solid var(--line); background: var(--surface); padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 2px; transition: background-color 0.2s, color 0.2s; }
+.count-label { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.count-value { font-family: var(--display); font-weight: 700; font-size: clamp(44px, 14vw, 92px); line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.count[data-phase="final"] { background: var(--ball); border-color: var(--ball); color: var(--on-ball); }
+.count[data-phase="final"] .count-label { color: var(--on-ball); }
+.count[data-phase="open"] { background: var(--court); border-color: var(--court); color: var(--on-court); }
+.count[data-phase="open"] .count-label { color: var(--on-court); }
+
+.step { display: flex; flex-direction: column; gap: 4px; }
+.step-when { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--court); }
+.step-text { margin: 0; font-size: 19px; font-weight: 500; text-wrap: balance; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.controls button { font: 500 15px/1.2 var(--body); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+.controls button[aria-pressed="true"] { border-color: var(--court); color: var(--court); box-shadow: inset 0 0 0 1px var(--court); }
+.controls button:disabled { opacity: 0.55; cursor: default; }
+.controls button:focus-visible { outline: 2px solid var(--court); outline-offset: 2px; }
+
+.plan { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.plan li { display: grid; grid-template-columns: 5.2em 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+.plan li > span { min-width: 0; }
+.plan time { font-family: var(--display); font-weight: 600; font-size: 18px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.plan li.now { color: var(--fg); }
+.plan li.now time { color: var(--court); }
+
+.note { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.note p { margin: 0; max-width: 65ch; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chip[data-state="syncing"]::before { animation: none; }
+  .count { transition: none; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <span class="eyebrow">Hong Kong Time · UTC+8</span>
+    <span id="sync" class="chip" data-state="syncing">Checking internet time…</span>
+  </header>
+
+  <section class="clock">
+    <div class="time"><span id="hms">--:--:--</span><span id="tenth" class="tenth">.-</span></div>
+    <div id="drift" class="drift">Comparing your iPhone clock with internet time…</div>
+  </section>
+
+  <section id="countBox" class="count" data-phase="far">
+    <div id="countLabel" class="count-label">Until 07:00:00</div>
+    <div id="countValue" class="count-value">--:--:--</div>
+  </section>
+
+  <section class="step">
+    <div id="stepWhen" class="step-when">Now</div>
+    <p id="stepText" class="step-text">New courts for 7 days ahead are released at 07:00:00.</p>
+  </section>
+
+  <div class="controls">
+    <button id="resync" type="button">Check time again</button>
+    <button id="beeps" type="button" aria-pressed="false">Beeps: off</button>
+    <button id="wake" type="button" aria-pressed="false">Keep screen on: off</button>
+  </div>
+
+  <ol class="plan" aria-label="Morning plan">
+    <li data-from="-600" data-to="-300"><time>06:50</time><span>Open My SmartPLAY. Plug in your charger and use good Wi‑Fi.</span></li>
+    <li data-from="-300" data-to="-15"><time>06:55</time><span>Open 智方便 once so Face ID is ready, then go to the My SmartPLAY login screen.</span></li>
+    <li data-from="-15" data-to="0"><time>06:59:45</time><span>Watch the countdown. Get ready to tap the 智方便 login.</span></li>
+    <li data-from="0" data-to="300"><time>07:00:00</time><span>Tap login. Once you're in the queue, don't refresh or leave the app.</span></li>
+  </ol>
+
+  <footer class="note">
+    <p>Time source: this page checks its own web server's clock (internet time) and corrects for network delay. SmartPLAY doesn't publish its server clock, and this page never connects to SmartPLAY.</p>
+    <p>iPhone tip: tap Share → Add to Home Screen to open it like an app. iOS pauses pages in the background, so the beeps only work while this page is on screen. A second phone or iPad running the clock works best.</p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  var HK = 8 * 3600 * 1000;
+  var offset = 0, err = null, synced = false, syncing = false, lastSync = 0;
+  var $ = function (id) { return document.getElementById(id); };
+  var pad = function (n, l) { return String(n).padStart(l || 2, "0"); };
+  var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var median = function (a) { var s = a.slice().sort(function (x, y) { return x - y; }); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+  var now = function () { return Date.now() + offset; };
+
+  function setChip(state, text) { var c = $("sync"); c.dataset.state = state; c.textContent = text; }
+  function secs(ms) { return (Math.abs(ms) / 1000).toFixed(2) + " s"; }
+
+  async function sample() {
+    var s = Date.now();
+    var r = await fetch("tick.txt?n=" + s + Math.random().toString(36).slice(2), { cache: "no-store" });
+    var e = Date.now();
+    var d = r.headers.get("date");
+    try { await r.text(); } catch (x) {}
+    if (!r.ok || !d) throw new Error("No server time");
+    var D = Date.parse(d);
+    if (isNaN(D)) throw new Error("Bad server time");
+    return { D: D, s: s, e: e };
+  }
+
+  // The server's Date header is whole seconds. Each reply bounds the clock offset to
+  // [D - received, D + 1000 - sent]; timing requests to land on a second boundary narrows it.
+  async function sync() {
+    if (syncing) return;
+    syncing = true;
+    $("resync").disabled = true;
+    setChip("syncing", "Checking internet time…");
+    try {
+      var lo = -Infinity, hi = Infinity, rtts = [];
+      for (var i = 0; i < 12; i++) {
+        if (i > 0) {
+          var mid = (lo + hi) / 2, half = median(rtts) / 2;
+          var boundary = Math.ceil((Date.now() + 150 + half + mid) / 1000) * 1000;
+          await wait(Math.max(0, boundary - mid - half - Date.now()));
+        }
+        var p = await sample();
+        rtts.push(p.e - p.s);
+        lo = Math.max(lo, p.D - p.e);
+        hi = Math.min(hi, p.D + 1000 - p.s);
+        if (lo > hi) throw new Error("Inconsistent server time");
+        if (i >= 5 && hi - lo < Math.max(40, 1.5 * Math.min.apply(null, rtts))) break;
+      }
+      offset = (lo + hi) / 2;
+      err = (hi - lo) / 2;
+      synced = true;
+      lastSync = Date.now();
+      setChip("ok", "Synced · ±" + secs(err));
+    } catch (x) {
+      offset = 0; err = null; synced = false;
+      setChip("warn", "Using iPhone clock");
+    }
+    syncing = false;
+    $("resync").disabled = false;
+    showDrift();
+  }
+
+  function showDrift() {
+    var el = $("drift");
+    if (!synced) {
+      el.textContent = "Couldn't reach internet time. Check Settings → General → Date & Time → Set Automatically is on.";
+    } else if (Math.abs(offset) <= Math.max(err, 50)) {
+      el.textContent = "Your iPhone clock matches internet time.";
+    } else {
+      el.textContent = "Your iPhone clock is " + secs(offset) + (offset > 0 ? " slow" : " fast") + ". This clock corrects for it.";
+    }
+  }
+
+  function hk(t) { return new Date(t + HK); }
+  function target7(t) {
+    var d = hk(t);
+    var t7 = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 7, 0, 0) - HK;
+    if (t >= t7 + 300000) t7 += 86400000;
+    return t7;
+  }
+  function fmtCount(ms) {
+    var a = Math.abs(ms);
+    var h = Math.floor(a / 3600000), m = Math.floor(a / 60000) % 60, s = Math.floor(a / 1000) % 60, t = Math.floor(a / 100) % 10;
+    return a >= 3600000 ? h + ":" + pad(m) + ":" + pad(s) : pad(m) + ":" + pad(s) + "." + t;
+  }
+
+  var STEPS = {
+    far:   ["Now", "Next release is at 07:00:00. Come back to this page around 06:45."],
+    prep:  ["06:50 – 06:55", "Open My SmartPLAY. Plug in your charger and switch to good Wi‑Fi."],
+    ready: ["06:55 – 06:59:45", "Open 智方便 once so Face ID is ready. Go to the My SmartPLAY login screen."],
+    final: ["Last 15 seconds", "Get ready. Tap the 智方便 login at 07:00:00."],
+    open:  ["Booking is open", "Once you're in the queue, don't refresh or switch apps."]
+  };
+
+  var last = {}, plan = Array.prototype.slice.call(document.querySelectorAll(".plan li"));
+  function set(id, v) { if (last[id] !== v) { last[id] = v; $(id).textContent = v; } }
+
+  function frame() {
+    var t = now(), d = hk(t);
+    set("hms", pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds()));
+    set("tenth", "." + Math.floor(d.getUTCMilliseconds() / 100));
+
+    var diff = target7(t) - t;
+    var phase = diff <= 0 ? "open" : diff <= 15000 ? "final" : diff <= 300000 ? "ready" : diff <= 600000 ? "prep" : "far";
+    if (last.phase !== phase) {
+      last.phase = phase;
+      $("countBox").dataset.phase = phase;
+      set("stepWhen", STEPS[phase][0]);
+      set("stepText", STEPS[phase][1]);
+    }
+    set("countLabel", diff > 0 ? "Until 07:00:00" : "Since 07:00:00");
+    set("countValue", (diff > 0 ? "−" : "+") + fmtCount(diff));
+
+    var rel = -diff / 1000;
+    plan.forEach(function (li) {
+      li.classList.toggle("now", rel >= +li.dataset.from && rel < +li.dataset.to);
+    });
+
+    beepTick(diff);
+    requestAnimationFrame(frame);
+  }
+
+  // Beeps: short beeps for the last 5 seconds, a long beep at 07:00:00.
+  var ctx = null, beepsOn = false, lastBeep = null;
+  function tone(freq, ms) {
+    if (!ctx) return;
+    var o = ctx.createOscillator(), g = ctx.createGain(), t0 = ctx.currentTime;
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.4, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + ms / 1000);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t0); o.stop(t0 + ms / 1000 + 0.02);
+  }
+  function beepTick(diff) {
+    if (!beepsOn) return;
+    var key = null;
+    if (diff > 0 && diff <= 5000) key = Math.ceil(diff / 1000);
+    else if (diff <= 0 && diff > -1000) key = 0;
+    if (key !== null && key !== lastBeep) key === 0 ? tone(1320, 450) : tone(880, 90);
+    lastBeep = key;
+  }
+  $("beeps").addEventListener("click", function () {
+    try {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      ctx.resume();
+      beepsOn = !beepsOn;
+      if (beepsOn) tone(880, 90);
+    } catch (x) { beepsOn = false; }
+    $("beeps").setAttribute("aria-pressed", String(beepsOn));
+    $("beeps").textContent = "Beeps: " + (beepsOn ? "on" : "off");
+  });
+
+  // Keep screen on (Screen Wake Lock, iOS 16.4+).
+  var lock = null, wantWake = false;
+  async function applyWake() {
+    var b = $("wake");
+    if (!("wakeLock" in navigator)) {
+      b.disabled = true;
+      b.textContent = "Keep screen on: not supported";
+      return;
+    }
+    try {
+      if (wantWake && !lock) {
+        lock = await navigator.wakeLock.request("screen");
+        lock.addEventListener("release", function () { lock = null; });
+      } else if (!wantWake && lock) {
+        await lock.release(); lock = null;
+      }
+    } catch (x) { wantWake = false; lock = null; }
+    b.setAttribute("aria-pressed", String(wantWake));
+    b.textContent = "Keep screen on: " + (wantWake ? "on" : "off");
+  }
+  $("wake").addEventListener("click", function () { wantWake = !wantWake; applyWake(); });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    if (wantWake && !lock) applyWake();
+    if (Date.now() - lastSync > 60000) sync();
+  });
+  setInterval(function () { if (!document.hidden) sync(); }, 10 * 60 * 1000);
+  $("resync").addEventListener("click", sync);
+
+  applyWake();
+  requestAnimationFrame(frame);
+  sync();
+})();
+</script>
+
+</body>
+</html>
